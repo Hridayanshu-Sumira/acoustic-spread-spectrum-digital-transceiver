@@ -41,6 +41,7 @@ COLORS = {
 
 # Consistent spacing scale
 S_XS, S_SM, S_MD, S_LG, S_XL = 6, 10, 16, 20, 28
+SIDEBAR_WIDTH = 310
 
 TAB_LABELS = [
     "📊  Module 1 · Baseband",
@@ -89,7 +90,10 @@ class ModernTransceiverUI(ctk.CTk):
 
         self.pipeline = main.TransceiverPipeline()
 
-        # Grid Layout
+        # Grid Layout -- column 0 (sidebar) is locked to a hard minsize so
+        # no amount of content stacked inside it can ever push it wider;
+        # only column 1 (main content) is allowed to grow.
+        self.grid_columnconfigure(0, weight=0, minsize=SIDEBAR_WIDTH)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=3)
         self.grid_rowconfigure(1, weight=2)
@@ -104,22 +108,19 @@ class ModernTransceiverUI(ctk.CTk):
     # Sidebar
 
     def create_sidebar(self):
-        # Outer fixed-width shell that clips to the window height
-        self.sidebar_shell = ctk.CTkFrame(self, width=310, corner_radius=0, fg_color=COLORS["sidebar"])
-        self.sidebar_shell.grid(row=0, column=0, rowspan=2, sticky="nsew")
-        self.sidebar_shell.grid_propagate(False)
-        self.sidebar_shell.grid_rowconfigure(0, weight=1)
-        self.sidebar_shell.grid_columnconfigure(0, weight=1)
-
-        # Scrollable inner content -- everything below lives in here, so no
-        # matter how many cards/buttons get added, the sidebar scrolls
-        # instead of clipping content off the bottom of the window.
+        # A single scrollable frame gridded directly into the locked
+        # column. No wrapper frame -- grid_columnconfigure(..., minsize=)
+        # on the root window is what actually enforces the fixed width,
+        # so nested propagate() tricks aren't needed and can't fight it.
         self.sidebar = ctk.CTkScrollableFrame(
-            self.sidebar_shell, corner_radius=0, fg_color=COLORS["sidebar"],
+            self, width=SIDEBAR_WIDTH, corner_radius=0, fg_color=COLORS["sidebar"],
             scrollbar_button_color=COLORS["border"],
             scrollbar_button_hover_color=COLORS["muted"],
         )
-        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew")
+        # Force every child to respect the column width even if a widget
+        # (e.g. a long decoded-text label) asks for more room.
+        self.sidebar.grid_columnconfigure(0, weight=1)
 
         # Brand header
         title_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
@@ -217,20 +218,39 @@ class ModernTransceiverUI(ctk.CTk):
                                          state="disabled", command=self.play_rx)
         self.btn_play_rx.pack(padx=S_MD, pady=(S_XS, S_MD), fill="x")
 
+        # Section 4: Standalone RX
+        self.rx_only_frame = self._card(self.sidebar)
+        self.rx_only_frame.grid(row=5, column=0, padx=S_LG, pady=(0, S_MD), sticky="ew")
+        self._card_title(self.rx_only_frame, "Standalone Receiver")
+        self.rx_duration_entry = ctk.CTkEntry(
+            self.rx_only_frame, placeholder_text="Rec. duration (s)", font=self.font_normal,
+            height=32, corner_radius=8, fg_color=COLORS["surface_alt"],
+            border_color=COLORS["border"], border_width=1,
+        )
+        self.rx_duration_entry.insert(0, "8.0")
+        self.rx_duration_entry.pack(padx=S_MD, pady=(0, S_XS), fill="x")
+
+        self.btn_rx_only = self._button(self.rx_only_frame, "🎙️  Record & Decode (Auto)", height=32,
+                                         fg_color="#005b96", hover_color="#004a7a",
+                                         command=self.run_receive_only)
+        self.btn_rx_only.pack(padx=S_MD, pady=(0, S_MD), fill="x")
+
         #  Output result
         self.result_frame = ctk.CTkFrame(self.sidebar, fg_color=COLORS["success_dim"],
                                           border_width=1, border_color=COLORS["success"],
                                           corner_radius=10)
-        self.result_frame.grid(row=5, column=0, padx=S_LG, pady=(0, S_MD), sticky="ew")
+        self.result_frame.grid(row=6, column=0, padx=S_LG, pady=(0, S_MD), sticky="ew")
         self.output_label = ctk.CTkLabel(self.result_frame, text="Decoded Output\n— waiting —",
-                                          font=self.font_subtitle, text_color="#a8e6cf")
-        self.output_label.pack(pady=S_MD)
+                                          font=self.font_subtitle, text_color="#a8e6cf",
+                                          wraplength=SIDEBAR_WIDTH - (2 * S_LG) - S_MD)
+        self.output_label.pack(pady=S_MD, padx=S_MD)
 
         # Status bar
         self.status_var = ctk.StringVar(value="System Ready")
         self.status_label = ctk.CTkLabel(self.sidebar, textvariable=self.status_var,
                                           font=ctk.CTkFont(size=11, weight="bold"),
-                                          text_color=COLORS["text_muted"])
+                                          text_color=COLORS["text_muted"],
+                                          wraplength=SIDEBAR_WIDTH - (2 * S_LG))
         self.status_label.grid(row=10, column=0, padx=S_LG, pady=(0, S_LG), sticky="ew")
 
 
@@ -322,7 +342,7 @@ class ModernTransceiverUI(ctk.CTk):
         self.console_textbox = ctk.CTkTextbox(
             self.term_view, font=self.font_terminal, fg_color=COLORS["term_bg"],
             text_color=COLORS["term_text"], corner_radius=8,
-            border_width=1, border_color=COLORS["border"],
+            border_width=1, border_color=COLORS["border"], wrap="word",
         )
         self.console_textbox.grid(row=1, column=0, padx=S_MD, pady=(0, S_MD), sticky="nsew")
         self.console_textbox.configure(state="disabled")
@@ -502,6 +522,55 @@ class ModernTransceiverUI(ctk.CTk):
                 card.pack(pady=S_SM, padx=S_SM, fill="x")
                 lbl = ctk.CTkLabel(card, image=ctk_img, text="")
                 lbl.pack(pady=S_SM, padx=S_SM)
+
+    # ------------------------------------------------------------------
+    # Standalone Receive
+    # ------------------------------------------------------------------
+    def run_receive_only(self):
+        try:
+            dur_str = self.rx_duration_entry.get().strip()
+            duration = float(dur_str) if dur_str else 8.0
+        except ValueError:
+            duration = 8.0
+
+        def task():
+            self.after(0, lambda: self.set_status("Listening... (play audio now)", True))
+            self.after(0, lambda: self.update_steps(active=2, completed=set()))
+            try:
+                # Record for the user-specified duration
+                recovered = self.pipeline.receive_only(duration_s=duration, num_chars=0)
+
+                self.after(0, lambda: self.load_images_into_tab(TAB_LABELS[7], [
+                    os.path.join(config.OUTPUT_DIR, "module_sync", "sync_correlation.png")
+                ]))
+                self.after(0, lambda: self.load_images_into_tab(TAB_LABELS[4], [
+                    os.path.join(config.OUTPUT_DIR, "module_6", "df2t_impulse_response.png")
+                ]))
+                self.after(0, lambda: self.load_images_into_tab(TAB_LABELS[5], [
+                    os.path.join(config.OUTPUT_DIR, "module_7", "iir_frequency_response.png")
+                ]))
+                self.after(0, lambda: self.load_images_into_tab(TAB_LABELS[6], [
+                    os.path.join(config.OUTPUT_DIR, "module_8", "demodulation_waveforms.png")
+                ]))
+
+                self.after(0, lambda: self.tabview.set(TAB_LABELS[6]))
+                self.after(0, lambda: self.btn_play_rx.configure(state="normal"))
+
+                if recovered:
+                    self.after(0, lambda: self.result_frame.configure(border_color=COLORS["success"], fg_color=COLORS["success_dim"]))
+                    self.after(0, lambda: self.output_label.configure(text=f"✓ Decoded Output\n{recovered}", text_color=COLORS["success"]))
+                else:
+                    self.after(0, lambda: self.result_frame.configure(border_color=COLORS["danger"], fg_color=COLORS["danger_dim"]))
+                    self.after(0, lambda: self.output_label.configure(text=f"✗ Decoded Output\n{recovered}", text_color=COLORS["danger"]))
+
+                self.after(0, lambda: self.update_steps(active=None, completed={2}))
+                self.after(0, lambda: self.set_status("Standalone RX Complete!", False))
+
+            except Exception as e:
+                print(f"RX Error: {e}")
+                self.after(0, lambda: self.set_status(f"Error: {str(e)}", False))
+
+        threading.Thread(target=task, daemon=True).start()
 
     def play_tx(self):
         if self.pipeline.tx_signal is not None:

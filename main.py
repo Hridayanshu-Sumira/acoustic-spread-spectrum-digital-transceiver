@@ -106,7 +106,7 @@ class TransceiverPipeline:
         )
         return self.rx_signal
 
-    def decode_and_demodulate(self):
+    def decode_and_demodulate(self, num_bits_override=None):
         """Step 3: Filter out noise and demodulate BPSK to text."""
         print("\n=== RECEIVER ===")
         
@@ -127,7 +127,15 @@ class TransceiverPipeline:
         filtered_rx = mod7_out["filtered_signal"]
 
         # Module 8 (FIR Demodulation)
-        num_bits = len(self.bitstream)
+        if num_bits_override is not None:
+            num_bits = num_bits_override
+        elif self.bitstream is not None:
+            num_bits = len(self.bitstream)
+        else:
+            # Auto-detect: derive from rx_signal length
+            num_bits = (len(self.rx_signal) // config.SAMPLES_PER_BIT // 8) * 8
+            print(f"  [RX] Auto-detected num_bits = {num_bits} ({num_bits // 8} chars)")
+
         mod8_out = module_8_fir_demodulation.run(
             signal=filtered_rx,
             fs=self.fs,
@@ -139,6 +147,101 @@ class TransceiverPipeline:
         
         self.recovered_text = mod8_out["decoded_text"]
         return self.recovered_text
+
+    def receive_only(self, duration_s=10.0, num_chars=0):
+        """
+        Standalone receive: record from mic and decode without any prior TX step.
+        The sender must have used the same system (preamble + BPSK payload).
+        
+        Args:
+            duration_s: How long to record in seconds.
+            num_chars:  Expected number of characters. 0 = auto-detect from signal length.
+        """
+        import sounddevice as sd
+        import matplotlib.pyplot as plt
+
+        # Create output dir (no input_text known, use 'rx_only')
+        config.OUTPUT_DIR = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "output", "rx_only"
+        )
+        os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+
+        print(f"\n=== STANDALONE RECEIVER (recording {duration_s:.1f}s) ===")
+        print("  [RX] Microphone is open — play the TX audio on the other device now!")
+        rec_data = sd.rec(int(duration_s * self.fs), samplerate=self.fs,
+                          channels=1, blocking=True)
+        raw_rx = rec_data.flatten()
+        print("  [RX] Recording complete. Searching for preamble...")
+
+        # Build the same preamble the sender prepended
+        preamble = module_audio_io.modulate_sync_preamble(
+            self.fs, self.fc, config.SAMPLES_PER_BIT
+        )
+
+        # Cross-correlate to find sync peak
+        correlation = np.correlate(raw_rx, preamble, mode='valid')
+        peak_idx = int(np.argmax(np.abs(correlation)))
+        payload_start = peak_idx + len(preamble)
+        print(f"  [RX] Preamble detected at sample {peak_idx} "
+              f"({peak_idx / self.fs:.3f}s into recording)")
+
+        # Determine payload length
+        if num_chars > 0:
+            num_bits = num_chars * 8
+            payload_end = payload_start + num_bits * config.SAMPLES_PER_BIT
+        else:
+            # Take everything after the preamble (up to end of recording)
+            remaining = len(raw_rx) - payload_start
+            num_bits = (remaining // config.SAMPLES_PER_BIT // 8) * 8
+            payload_end = payload_start + num_bits * config.SAMPLES_PER_BIT
+            print(f"  [RX] Auto-detected {num_bits} bits ({num_bits // 8} chars)")
+
+        # Guard against recording cut-off
+        if payload_end > len(raw_rx):
+            padding = np.zeros(payload_end - len(raw_rx))
+            raw_rx = np.concatenate([raw_rx, padding])
+            print("  [RX WARNING] Recording too short — padded with zeros.")
+
+        self.rx_signal = raw_rx[payload_start:payload_end]
+        # Reset bitstream so decode_and_demodulate uses auto num_bits path
+        self.bitstream = None
+
+        # Save sync plot
+        sync_dir = os.path.join(config.OUTPUT_DIR, "module_sync")
+        os.makedirs(sync_dir, exist_ok=True)
+        plt.figure(figsize=(10, 4))
+        plt.plot(correlation)
+        plt.axvline(peak_idx, color='r', linestyle='--', label='Detected Sync Peak')
+        plt.title("Standalone RX — Audio Sync Cross-Correlation")
+        plt.xlabel("Sample Index")
+        plt.ylabel("Correlation Magnitude")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(os.path.join(sync_dir, "sync_correlation.png"))
+        plt.close()
+
+        recovered_text = self.decode_and_demodulate(num_bits_override=num_bits)
+
+        # Rename the output directory to match the decoded text
+        import shutil
+        safe_text = "".join([c if c.isalnum() else "_" for c in recovered_text])[:20]
+        if not safe_text:
+            safe_text = "rx_empty"
+            
+        final_dir = os.path.join(os.path.dirname(config.OUTPUT_DIR), f"rx_{safe_text}")
+        
+        try:
+            if os.path.exists(final_dir):
+                shutil.rmtree(final_dir)
+            os.rename(config.OUTPUT_DIR, final_dir)
+            config.OUTPUT_DIR = final_dir
+        except Exception as e:
+            print(f"  [RX WARNING] Could not rename output dir: {e}")
+
+        return recovered_text
+
+
 
 
 def main():
