@@ -32,7 +32,7 @@ class TransceiverPipeline:
         
         # Create a safe folder name from input text
         safe_text = "".join([c if c.isalnum() else "_" for c in input_text])[:20]
-        config.OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output", safe_text)
+        config.OUTPUT_DIR = os.path.join(config.get_base_dir(), "output", safe_text)
         os.makedirs(config.OUTPUT_DIR, exist_ok=True)
         
         print("\n=== TRANSMITTER ===")
@@ -162,7 +162,7 @@ class TransceiverPipeline:
 
         # Create output dir (no input_text known, use 'rx_only')
         config.OUTPUT_DIR = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "output", "rx_only"
+            config.get_base_dir(), "output", "rx_only"
         )
         os.makedirs(config.OUTPUT_DIR, exist_ok=True)
 

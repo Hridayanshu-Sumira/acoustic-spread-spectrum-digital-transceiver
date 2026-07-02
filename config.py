@@ -6,6 +6,13 @@
 
 
 import os
+import sys
+
+def get_base_dir():
+    """Returns the base directory of the app. Handles PyInstaller frozen executables."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
 
 #  Sampling & Carrier
 # Fs must be at least twice the highest frequency component (Nyquist).
@@ -46,4 +53,4 @@ FIR_WINDOW     = "hamming"      # Window type for the FIR design
 
 # Output Paths 
 # Root output directory -- every module writes its plots here.
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+OUTPUT_DIR = os.path.join(get_base_dir(), "output")
