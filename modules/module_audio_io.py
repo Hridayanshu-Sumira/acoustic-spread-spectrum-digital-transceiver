@@ -97,3 +97,21 @@ def synchronize_signal(rx_signal, preamble, tx_length, output_dir):
         
     extracted_payload = rx_signal[payload_start:payload_end]
     return extracted_payload
+
+
+def record_only(tx_length, fs, fc, samples_per_bit, record_padding=2.0):
+    """
+    Records audio from the microphone only (no playback).
+    Use this when the TX signal is played from an external device.
+    The preamble must be present in the incoming audio for synchronisation.
+    """
+    # Estimate recording duration: preamble + payload + silence buffers + padding
+    preamble = modulate_sync_preamble(fs, fc, samples_per_bit)
+    silence_samples = int(fs * 0.5)
+    full_duration = (len(preamble) + tx_length + 2 * silence_samples) / fs + record_padding
+
+    print(f"  [Audio] Recording for {full_duration:.1f}s — play the TX audio from the other device now!")
+    rec_data = sd.rec(int(full_duration * fs), samplerate=fs, channels=1, blocking=True)
+    rx_signal = rec_data.flatten()
+    print("  [Audio] Recording complete.")
+    return rx_signal, preamble

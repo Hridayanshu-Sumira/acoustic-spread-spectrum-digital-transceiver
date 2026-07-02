@@ -79,8 +79,8 @@ class TransceiverPipeline:
         return self.rx_signal
 
     def run_channel_acoustic(self):
-        """Step 2b: Physically transmit and receive via speakers/mic."""
-        print("\n=== CHANNEL (ACOUSTIC) ===")
+        """Step 2b: Physically transmit and receive via speakers/mic (same device)."""
+        print("\n=== CHANNEL (ACOUSTIC — PLAY + RECORD) ===")
         raw_rx, preamble = module_audio_io.transmit_and_receive(
             self.tx_signal, self.fs, self.fc, config.SAMPLES_PER_BIT
         )
@@ -88,6 +88,20 @@ class TransceiverPipeline:
         # Synchronize
         self.rx_signal = module_audio_io.synchronize_signal(
             raw_rx, preamble, len(self.tx_signal), 
+            output_dir=os.path.join(config.OUTPUT_DIR, "module_sync")
+        )
+        return self.rx_signal
+
+    def run_record_only(self):
+        """Step 2b (alt): Record from mic only — TX signal played on external device."""
+        print("\n=== CHANNEL (ACOUSTIC — RECORD ONLY) ===")
+        raw_rx, preamble = module_audio_io.record_only(
+            len(self.tx_signal), self.fs, self.fc, config.SAMPLES_PER_BIT
+        )
+
+        # Synchronize
+        self.rx_signal = module_audio_io.synchronize_signal(
+            raw_rx, preamble, len(self.tx_signal),
             output_dir=os.path.join(config.OUTPUT_DIR, "module_sync")
         )
         return self.rx_signal
