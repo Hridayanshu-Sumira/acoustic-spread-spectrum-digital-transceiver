@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import tkinter as tk
 import numpy as np
 import customtkinter as ctk
 from PIL import Image
@@ -95,8 +96,11 @@ class ModernTransceiverUI(ctk.CTk):
         # only column 1 (main content) is allowed to grow.
         self.grid_columnconfigure(0, weight=0, minsize=SIDEBAR_WIDTH)
         self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=3)
-        self.grid_rowconfigure(1, weight=2)
+        self.grid_rowconfigure(0, weight=1)
+
+        self.paned_window = tk.PanedWindow(self, orient=tk.VERTICAL, bg=COLORS["bg"], 
+                                           bd=0, sashwidth=10, sashcursor="sb_v_double_arrow")
+        self.paned_window.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=S_LG, pady=S_LG)
 
         self.create_sidebar()
         self.create_main_view()
@@ -283,9 +287,9 @@ class ModernTransceiverUI(ctk.CTk):
     # Main dashboard
 
     def create_main_view(self):
-        self.main_view = ctk.CTkFrame(self, corner_radius=15, fg_color=COLORS["surface"],
+        self.main_view = ctk.CTkFrame(self.paned_window, corner_radius=15, fg_color=COLORS["surface"],
                                        border_width=1, border_color=COLORS["border"])
-        self.main_view.grid(row=0, column=1, padx=S_LG, pady=(S_LG, S_SM), sticky="nsew")
+        self.paned_window.add(self.main_view, stretch="always", minsize=200)
         self.main_view.grid_rowconfigure(1, weight=1)
         self.main_view.grid_columnconfigure(0, weight=1)
 
@@ -328,9 +332,9 @@ class ModernTransceiverUI(ctk.CTk):
     # Terminal
 
     def create_terminal_view(self):
-        self.term_view = ctk.CTkFrame(self, corner_radius=15, fg_color=COLORS["surface"],
+        self.term_view = ctk.CTkFrame(self.paned_window, corner_radius=15, fg_color=COLORS["surface"],
                                        border_width=1, border_color=COLORS["border"])
-        self.term_view.grid(row=1, column=1, padx=S_LG, pady=(S_SM, S_LG), sticky="nsew")
+        self.paned_window.add(self.term_view, stretch="always", minsize=100)
         self.term_view.grid_rowconfigure(1, weight=1)
         self.term_view.grid_columnconfigure(0, weight=1)
 
